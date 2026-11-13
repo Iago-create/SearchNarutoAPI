@@ -1,0 +1,141 @@
+﻿@page "/"
+@inject NarutoApiService Api
+
+<PageTitle>SearchNarutoAPI</PageTitle>
+
+<section class="busca">
+    <input type="text"
+           placeholder="Buscar personagem (ex.: Naruto, Sasuke, Sakura)"
+           @bind="termo" @bind:event="oninput"
+           @onkeydown="AoPressionarTecla" />
+    <button @onclick="Buscar" disabled="@carregando">Buscar</button>
+    <button class="secundario" @onclick="Limpar" disabled="@carregando">Listar todos</button>
+</section>
+
+@if (carregando)
+{
+    <p class="aviso">Carregando personagens...</p>
+}
+else if (erro is not null)
+{
+    <p class="aviso erro">@erro</p>
+}
+else if (personagens.Count == 0)
+{
+    <p class="aviso">Nenhum personagem encontrado.</p>
+}
+else
+{
+    <div class="grade">
+        @foreach (var p in personagens)
+        {
+            <article class="card">
+                @if (p.PrimeiraImagem is not null)
+                {
+                    <img src="@p.PrimeiraImagem" alt="@p.Name" loading="lazy" />
+                }
+                else
+                {
+                    <div class="sem-imagem">Sem imagem</div>
+                }
+
+                <div class="info">
+                    <h2>@p.Name</h2>
+                    <p><strong>Clã/Afiliação:</strong> @p.ClaOuAfiliacao</p>
+                    <p><strong>Rank ninja:</strong> @p.PatenteNinja</p>
+
+                    <details>
+                        <summary>Jutsus (@(p.Jutsu?.Count ?? 0))</summary>
+                        @if (p.Jutsu is { Count: > 0 })
+                        {
+                            <ul>
+                                @foreach (var j in p.Jutsu)
+                                {
+                                    <li>@j</li>
+                                }
+                            </ul>
+                        }
+                        else
+                        {
+                            <p>Nenhum jutsu informado.</p>
+                        }
+                    </details>
+                </div>
+            </article>
+        }
+    </div>
+
+    @if (totalPaginas > 1)
+    {
+        <nav class="paginacao">
+            <button @onclick="() => Carregar(paginaAtual - 1)" disabled="@(paginaAtual <= 1)">« Anterior</button>
+            <span>Página @paginaAtual de @totalPaginas</span>
+            <button @onclick="() => Carregar(paginaAtual + 1)" disabled="@(paginaAtual >= totalPaginas)">Próxima »</button>
+        </nav>
+    }
+}
+
+@code {
+    private const int PorPagina = 12;
+
+    private List<Character> personagens = new();
+    private string termo = string.Empty;
+    private string termoAplicado = string.Empty;
+    private bool carregando;
+    private string? erro;
+    private int paginaAtual = 1;
+    private int totalPaginas = 1;
+
+    protected override async Task OnInitializedAsync() => await Carregar(1);
+
+    private async Task Buscar()
+    {
+        termoAplicado = termo.Trim();
+        await Carregar(1);
+    }
+
+    private async Task Limpar()
+    {
+        termo = termoAplicado = string.Empty;
+        await Carregar(1);
+    }
+
+    private async Task AoPressionarTecla(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Buscar();
+    }
+
+    private async Task Carregar(int pagina)
+    {
+        carregando = true;
+        erro = null;
+        StateHasChanged();
+
+        try
+        {
+            var resposta = string.IsNullOrEmpty(termoAplicado)
+                ? await Api.ListarAsync(pagina, PorPagina)
+                : await Api.BuscarPorNomeAsync(termoAplicado, pagina, PorPagina);
+
+            personagens = resposta?.Characters ?? new();
+            paginaAtual = pagina;
+
+            var total = resposta?.TotalCharacters ?? personagens.Count;
+            totalPaginas = Math.Max(1, (int)Math.Ceiling(total / (double)PorPagina));
+        }
+        catch (HttpRequestException)
+        {
+            personagens = new();
+            erro = "Não foi possível acessar a API. Aguarde alguns segundos e tente novamente.";
+        }
+        catch (Exception ex)
+        {
+            personagens = new();
+            erro = $"Erro inesperado: {ex.Message}";
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+}
